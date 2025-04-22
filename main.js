@@ -8,21 +8,20 @@ const SERIAL_BAUD_RATE = 9600;
 const SERVIDOR_PORTA = 3300;
 
 // habilita ou desabilita a inserção de dados no banco de dados
-const HABILITAR_OPERACAO_INSERIR = false;
+const HABILITAR_OPERACAO_INSERIR = true;
 
 // função para comunicação serial
 const serial = async (
-    valoresSensorAnalogico,
     valoresSensorDigital,
 ) => {
 
     // conexão com o banco de dados MySQL
     let poolBancoDados = mysql.createPool(
         {
-            host: 'HOST_DO_BANCO',
-            user: 'USUARIO_DO_BANCO',
-            password: 'SENHA_DO_BANCO',
-            database: 'DATABASE_DO_BANCO',
+            host: 'localhost',
+            user: 'aluno',
+            password: 'sptech',
+            database: 'SpotParking_VPI',
             port: 3306
         }
     ).promise();
@@ -50,24 +49,61 @@ const serial = async (
     // processa os dados recebidos do Arduino
     arduino.pipe(new serialport.ReadlineParser({ delimiter: '\r\n' })).on('data', async (data) => {
         console.log(data);
-        const valores = data.split(';');
-        const sensorDigital = parseInt(valores[0]);
-        const sensorAnalogico = parseFloat(valores[1]);
+        // Dados como "ID_SENSOR:VALOR" ex: "1:1"
+        const [idSensorStr, statusStr] = data.split(':');
+        const idSensor = parseInt(idSensorStr);
+        const valor = parseInt(statusStr);
+
+        const sensorDigital = parseInt(valor);
 
         // armazena os valores dos sensores nos arrays correspondentes
-        valoresSensorAnalogico.push(sensorAnalogico);
         valoresSensorDigital.push(sensorDigital);
 
         // insere os dados no banco de dados (se habilitado)
         if (HABILITAR_OPERACAO_INSERIR) {
 
-            // este insert irá inserir os dados na tabela "medida"
-            await poolBancoDados.execute(
-                'INSERT INTO medida (sensor_analogico, sensor_digital) VALUES (?, ?)',
-                [sensorAnalogico, sensorDigital]
-            );
-            console.log("valores inseridos no banco: ", sensorAnalogico + ", " + sensorDigital);
+            //Pega o ultimo registro de cada sensor e armazena num array em formato Json
+            const [ultimosRegistros] = await poolBancoDados.execute(`
+            SELECT * FROM Ocupacao 
+            WHERE fkSensor = ? 
+            ORDER BY entrada DESC 
+            LIMIT 1
+            `, [idSensor]);
 
+            let novoStatus = valor === 1 ? 'Ocupado' : 'Disponivel';
+
+            if (ultimosRegistros.length === 0) {
+                await poolBancoDados.execute(`
+                INSERT INTO Ocupacao (fkSensor, entrada, status_vaga) 
+                VALUES (?, NOW(), ?)
+                `, [idSensor, novoStatus]
+                );
+
+            } else {
+                const ultimo = ultimosRegistros[0];
+
+                if (ultimo.status_vaga !== novoStatus) {
+                    if (novoStatus === 'Disponivel') {
+                        // Atualiza saida da vaga ocupada
+                        await poolBancoDados.execute(`
+                        UPDATE Ocupacao 
+                        SET saida = NOW(), status_vaga = ? 
+                        WHERE idOcupacao = ? AND fkSensor = ?
+                        `, [novoStatus, ultimo.idOcupacao, idSensor]
+                        );
+                    } else {
+                        // Insere nova ocupacao
+                        await poolBancoDados.execute(`
+                        INSERT INTO Ocupacao (fkSensor, entrada, status_vaga) 
+                        VALUES (?, NOW(), ?)
+                          `, [idSensor, novoStatus]
+                        );
+                    }
+                    console.log(`[MUDANÇA] Sensor ${idSensor} status alterado para: ${novoStatus}`);
+                } else {
+                    console.log(`[SEM MUDANÇA] Sensor ${idSensor} continua como: ${novoStatus}`);
+                }
+            }
         }
 
     });
@@ -80,7 +116,6 @@ const serial = async (
 
 // função para criar e configurar o servidor web
 const servidor = (
-    valoresSensorAnalogico,
     valoresSensorDigital
 ) => {
     const app = express();
@@ -97,10 +132,6 @@ const servidor = (
         console.log(`API executada com sucesso na porta ${SERVIDOR_PORTA}`);
     });
 
-    // define os endpoints da API para cada tipo de sensor
-    app.get('/sensores/analogico', (_, response) => {
-        return response.json(valoresSensorAnalogico);
-    });
     app.get('/sensores/digital', (_, response) => {
         return response.json(valoresSensorDigital);
     });
@@ -109,18 +140,15 @@ const servidor = (
 // função principal assíncrona para iniciar a comunicação serial e o servidor web
 (async () => {
     // arrays para armazenar os valores dos sensores
-    const valoresSensorAnalogico = [];
     const valoresSensorDigital = [];
 
     // inicia a comunicação serial
     await serial(
-        valoresSensorAnalogico,
         valoresSensorDigital
     );
 
     // inicia o servidor web
     servidor(
-        valoresSensorAnalogico,
         valoresSensorDigital
     );
 })();
