@@ -21,7 +21,7 @@ const serial = async (
             host: 'localhost',
             user: 'aluno',
             password: 'sptech',
-            database: 'SpotParking_VPI',
+            database: 'SpotParking',
             port: 3306
         }
     ).promise();
@@ -49,8 +49,9 @@ const serial = async (
     // processa os dados recebidos do Arduino
     arduino.pipe(new serialport.ReadlineParser({ delimiter: '\r\n' })).on('data', async (data) => {
         console.log(data);
-        // Dados como "ID_SENSOR:VALOR" ex: "1:1"
-        const [idSensorStr, statusStr] = data.split(':');
+
+        // Dados como ex: "1:1" -> "idSensor:statusVaga"
+        const [idSensorStr, idEstacionamentoStr, statusStr] = data.split(':');
         const idSensor = parseInt(idSensorStr);
         const valor = parseInt(statusStr);
 
@@ -62,9 +63,9 @@ const serial = async (
         // insere os dados no banco de dados (se habilitado)
         if (HABILITAR_OPERACAO_INSERIR) {
 
-            //Pega o ultimo registro de cada sensor e armazena num array em formato Json
+            //Pega o ultimo registro do sensor e armazena num array em formato Json
             const [ultimosRegistros] = await poolBancoDados.execute(`
-            SELECT * FROM Ocupacao 
+            SELECT * FROM Demanda_Ocupacional  
             WHERE fkSensor = ? 
             ORDER BY entrada DESC 
             LIMIT 1
@@ -72,13 +73,12 @@ const serial = async (
 
             let novoStatus = valor === 1 ? 'Ocupado' : 'Disponivel';
 
-            if (ultimosRegistros.length === 0) {
+            if (ultimosRegistros.length === 0) { // cria um novo registro no sensor se não existir que será tratado eventualmente
                 await poolBancoDados.execute(`
-                INSERT INTO Ocupacao (fkSensor, entrada, status_vaga) 
-                VALUES (?, NOW(), ?)
-                `, [idSensor, novoStatus]
+                        INSERT INTO Demanda_Ocupacional (fkSensor, status_vaga) 
+                        VALUES (?, ?)`
+                    , [idSensor, novoStatus]
                 );
-
             } else {
                 const ultimo = ultimosRegistros[0];
 
@@ -86,17 +86,21 @@ const serial = async (
                     if (novoStatus === 'Disponivel') {
                         // Atualiza saida da vaga ocupada
                         await poolBancoDados.execute(`
-                        UPDATE Ocupacao 
-                        SET saida = NOW(), status_vaga = ? 
-                        WHERE idOcupacao = ? AND fkSensor = ?
-                        `, [novoStatus, ultimo.idOcupacao, idSensor]
+                        UPDATE Demanda_Ocupacional 
+                        SET status_vaga = ? 
+                        WHERE idDemandOcup = ? AND fkSensor = ?
+                        `, ["Ocupação finalizada", ultimo.idDemandOcup, idSensor]
+                        );
+                        await poolBancoDados.execute(`
+                            INSERT INTO Demanda_Ocupacional (fkSensor, status_vaga) 
+                            VALUES (?, ?)
+                            `, [idSensor, novoStatus]
                         );
                     } else {
-                        // Insere nova ocupacao
                         await poolBancoDados.execute(`
-                        INSERT INTO Ocupacao (fkSensor, entrada, status_vaga) 
-                        VALUES (?, NOW(), ?)
-                          `, [idSensor, novoStatus]
+                        UPDATE Demanda_Ocupacional SET status_vaga = ? 
+                        WHERE idOcupacao = ? AND fkSensor = ?
+                          `, [novoStatus, ultimo.idDemandOcup, idSensor]
                         );
                     }
                     console.log(`[MUDANÇA] Sensor ${idSensor} status alterado para: ${novoStatus}`);
@@ -104,8 +108,19 @@ const serial = async (
                     console.log(`[SEM MUDANÇA] Sensor ${idSensor} continua como: ${novoStatus}`);
                 }
             }
-        }
+            const [ultimosRegistrosDemandOcup] = await poolBancoDados.execute(`
+                SELECT * FROM Demanda_Ocupacional  
+                WHERE fkSensor = ? 
+                ORDER BY entrada DESC 
+                LIMIT 1
+                `, [idSensor]);
 
+            await poolBancoDados.execute(`
+                        INSERT INTO Log (fkDemandOcup, fkSensor, status_vaga) 
+                        VALUES (?, ?, ?)`
+                , [ultimosRegistrosDemandOcup[0].idDemandOcup, idSensor, novoStatus]
+            );
+        }
     });
 
     // evento para lidar com erros na comunicação serial

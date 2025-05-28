@@ -1,0 +1,8 @@
+SELECT Estacionamento.nome AS NomeEstacionamento, SUM(contagem) AS QtdVeiculos
+FROM Fluxo
+JOIN Estacionamento ON Estacionamento.id = Fluxo.fkEstacionamento
+WHERE Fluxo.fkEstacionamento = 1 
+AND Fluxo.dataHora BETWEEN '2025-04-26' AND '2025-04-27'
+GROUP BY Estacionamento.nome;
+
+select sum(contagem) from fluxo;

@@ -6,11 +6,12 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 
-<body>
+<body
+    style="background-color: #000; height:100vh; display:flex; align-items: center; justify-content:center; flex-direction:column">
 
-    <h1>Graphics</h1>
-    <div style="display: flex;">
-        <div style="width: 50%;">
+    <h1 style="text-align: center; color: #fff">Ocupação da vaga em tempo real - Sensor1 </h1>
+    <div style="display: flex; width:100%; align-items: center; justify-content:center;">
+        <div style="padding:1vw; border-radius:5px; width: 70%; background-color: #dbdbdb; border: 1px solid #000">
             <canvas id="sensorDigital"></canvas>
         </div>
     </div>
@@ -21,22 +22,34 @@
             type: 'line',
             data: {
                 datasets: [{
-                    label: 'Digital',
-                    borderColor: '#63B1BC',
-                    backgroundColor: '#0762C8'
+                    label: 'Ocupação',
+                    borderColor: '#000',
+                    backgroundColor: '#c77c04',
                 }]
             },
             options: {
                 scales: {
                     x: {
-                        beginAtZero: true
+                        beginAtZero: true,
+                        ticks: {
+                            color: '#000',
+                            font: {
+                                size: 15.5
+                            }
+                        }
                     },
                     y: {
                         title: {
                             display: true,
                             text: '(0-1)'
                         },
-                        beginAtZero: true
+                        beginAtZero: true,
+                        ticks: {
+                            color: '#000',
+                            font: {
+                                size: 15.5
+                            }
+                        }
                     }
                 }
             }
