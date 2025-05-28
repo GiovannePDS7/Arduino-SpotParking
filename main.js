@@ -51,7 +51,7 @@ const serial = async (
         console.log(data);
 
         // Dados como ex: "1:1" -> "idSensor:statusVaga"
-        const [idSensorStr, idEstacionamentoStr, statusStr] = data.split(':');
+        const [idSensorStr, statusStr] = data.split(':');
         const idSensor = parseInt(idSensorStr);
         const valor = parseInt(statusStr);
 
@@ -67,7 +67,7 @@ const serial = async (
             const [ultimosRegistros] = await poolBancoDados.execute(`
             SELECT * FROM Demanda_Ocupacional  
             WHERE fkSensor = ? 
-            ORDER BY entrada DESC 
+            ORDER BY idDemandOcup DESC 
             LIMIT 1
             `, [idSensor]);
 
@@ -99,7 +99,7 @@ const serial = async (
                     } else {
                         await poolBancoDados.execute(`
                         UPDATE Demanda_Ocupacional SET status_vaga = ? 
-                        WHERE idOcupacao = ? AND fkSensor = ?
+                        WHERE idDemandOcup = ? AND fkSensor = ?
                           `, [novoStatus, ultimo.idDemandOcup, idSensor]
                         );
                     }
@@ -109,10 +109,10 @@ const serial = async (
                 }
             }
             const [ultimosRegistrosDemandOcup] = await poolBancoDados.execute(`
-                SELECT * FROM Demanda_Ocupacional  
-                WHERE fkSensor = ? 
-                ORDER BY entrada DESC 
-                LIMIT 1
+            SELECT * FROM Demanda_Ocupacional  
+            WHERE fkSensor = ? 
+            ORDER BY idDemandOcup DESC 
+            LIMIT 1
                 `, [idSensor]);
 
             await poolBancoDados.execute(`
